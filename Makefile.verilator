@@ -1,0 +1,288 @@
+# ============================================================
+# Verilator Makefile for 8-bit ALU UVM Project
+# ============================================================
+
+VERILATOR = verilator
+
+# Project root: this Makefile lives alongside alu.v / alu_uvm_tb.sv,
+# so the root is just the directory containing this Makefile.
+PROJECT_ROOT = $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+
+# UVM installation
+UVM_HOME ?= $(HOME)/uvm/1800.2-2020.3.2/src
+
+
+# ------------------------------------------------------------
+# Include directories
+# ------------------------------------------------------------
+INC = \
+	+incdir+$(UVM_HOME) \
+	+incdir+$(PROJECT_ROOT)
+
+
+# ------------------------------------------------------------
+# Compile-time definitions
+# ------------------------------------------------------------
+DEFINES = \
+	+define+UVM_NO_DPI
+
+
+cov_off.sv:
+	echo '/* verilator coverage_off */' > cov_off.sv
+
+cov_on.sv:
+	echo '/* verilator coverage_on */' > cov_on.sv
+
+
+# ------------------------------------------------------------
+# Source files
+# ------------------------------------------------------------
+#UVM_SRC = $(UVM_HOME)/uvm_pkg.sv
+
+UVM_SRC = cov_off.sv $(UVM_HOME)/uvm_pkg.sv cov_on.sv
+
+RTL_SRC = \
+	$(PROJECT_ROOT)/alu.v
+
+TB_SRC = \
+	$(PROJECT_ROOT)/alu_uvm_tb.sv
+
+
+# ------------------------------------------------------------
+# Verilator options
+# ------------------------------------------------------------
+VERILATOR_FLAGS = \
+	-Wno-fatal \
+	-Wno-TIMESCALEMOD \
+	--timing \
+	--coverage \
+	--top-module top \
+	-j $(shell nproc)
+
+
+# ------------------------------------------------------------
+# Coverage files and directories
+# ------------------------------------------------------------
+
+COVERAGE_DIR = $(PROJECT_ROOT)/coverage
+
+CORNER_COV = $(COVERAGE_DIR)/coverage_corner.dat
+SWEEP_COV  = $(COVERAGE_DIR)/coverage_sweep.dat
+RANDOM_COV = $(COVERAGE_DIR)/coverage_random.dat
+
+MERGED_COV = $(COVERAGE_DIR)/merged.dat
+
+ANNOTATED_DIR = $(COVERAGE_DIR)/annotated
+
+SUMMARY_FILE = $(COVERAGE_DIR)/coverage_summary.txt
+
+
+# ------------------------------------------------------------
+# Targets
+# ------------------------------------------------------------
+
+.PHONY: help \
+	lint \
+	build \
+	run \
+	run_corner \
+	run_sweep \
+	run_random \
+	coverage_corner \
+	coverage_sweep \
+	coverage_random \
+	merge_coverage \
+	coverage_report \
+	coverage \
+	clean
+
+
+# ============================================================
+# Help
+# ============================================================
+
+help:
+	@echo ""
+	@echo "============================================================"
+	@echo " 8-bit ALU - Verilator UVM Simulation"
+	@echo "============================================================"
+	@echo ""
+	@echo "Simulation targets:"
+	@echo ""
+	@echo "  make -f Makefile.verilator lint"
+	@echo "      Run Verilator lint/checks only"
+	@echo ""
+	@echo "  make -f Makefile.verilator build"
+	@echo "      Build RTL + UVM testbench with coverage enabled"
+	@echo ""
+	@echo "  make -f Makefile.verilator run"
+	@echo "      Run alu_corner_test (directed corner cases)"
+	@echo ""
+	@echo "  make -f Makefile.verilator run_corner"
+	@echo "      Run alu_corner_test"
+	@echo ""
+	@echo "  make -f Makefile.verilator run_sweep"
+	@echo "      Run alu_exhaustive_corner_test"
+	@echo ""
+	@echo "  make -f Makefile.verilator run_random"
+	@echo "      Run alu_random_test"
+	@echo ""
+	@echo "Coverage targets:"
+	@echo ""
+	@echo "  make -f Makefile.verilator coverage_corner"
+	@echo "      Run alu_corner_test and generate coverage_corner.dat"
+	@echo ""
+	@echo "  make -f Makefile.verilator coverage_sweep"
+	@echo "      Run alu_exhaustive_corner_test and generate coverage_sweep.dat"
+	@echo ""
+	@echo "  make -f Makefile.verilator coverage_random"
+	@echo "      Run alu_random_test and generate coverage_random.dat"
+	@echo ""
+	@echo "  make -f Makefile.verilator merge_coverage"
+	@echo "      Merge all test coverage data"
+	@echo ""
+	@echo "  make -f Makefile.verilator coverage_report"
+	@echo "      Generate annotated coverage report and summary"
+	@echo ""
+	@echo "  make -f Makefile.verilator coverage"
+	@echo "      Run all coverage steps (build + all 3 tests + merge + report)"
+	@echo ""
+	@echo "Other:"
+	@echo ""
+	@echo "  make -f Makefile.verilator clean"
+	@echo "      Remove generated Verilator and coverage files"
+	@echo ""
+	@echo "============================================================"
+	@echo ""
+
+
+# ============================================================
+# Lint
+# ============================================================
+
+lint: clean
+	$(VERILATOR) \
+		$(VERILATOR_FLAGS) \
+		--lint-only \
+		$(INC) \
+		$(DEFINES) \
+		$(UVM_SRC) \
+		$(RTL_SRC) \
+		$(TB_SRC)
+
+
+# ============================================================
+# Build
+# ============================================================
+
+build: clean cov_off.sv cov_on.sv
+	$(VERILATOR) \
+		$(VERILATOR_FLAGS) \
+		--binary \
+		$(INC) \
+		$(DEFINES) \
+		$(UVM_SRC) \
+		$(RTL_SRC) \
+		$(TB_SRC)
+
+
+# ============================================================
+# Normal simulation
+# ============================================================
+
+run:
+	./obj_dir/Vtop +UVM_TESTNAME=alu_corner_test
+
+run_corner:
+	./obj_dir/Vtop +UVM_TESTNAME=alu_corner_test
+
+run_sweep:
+	./obj_dir/Vtop +UVM_TESTNAME=alu_exhaustive_corner_test
+
+run_random:
+	./obj_dir/Vtop +UVM_TESTNAME=alu_random_test
+
+
+# ============================================================
+# Individual coverage runs
+# ============================================================
+
+coverage_corner:
+	mkdir -p $(COVERAGE_DIR)
+	./obj_dir/Vtop \
+		+UVM_TESTNAME=alu_corner_test \
+		+verilator+coverage+file+$(CORNER_COV)
+
+coverage_sweep:
+	mkdir -p $(COVERAGE_DIR)
+	./obj_dir/Vtop \
+		+UVM_TESTNAME=alu_exhaustive_corner_test \
+		+verilator+coverage+file+$(SWEEP_COV)
+
+coverage_random:
+	mkdir -p $(COVERAGE_DIR)
+	./obj_dir/Vtop \
+		+UVM_TESTNAME=alu_random_test \
+		+verilator+coverage+file+$(RANDOM_COV)
+
+
+# ============================================================
+# Merge coverage
+# ============================================================
+
+merge_coverage:
+	verilator_coverage \
+		--write $(MERGED_COV) \
+		$(CORNER_COV) \
+		$(SWEEP_COV) \
+		$(RANDOM_COV)
+
+
+# ============================================================
+# Generate annotated coverage report
+# ============================================================
+
+coverage_report:
+	rm -rf $(ANNOTATED_DIR)
+	mkdir -p $(ANNOTATED_DIR)
+
+	verilator_coverage \
+		--annotate $(ANNOTATED_DIR) \
+		$(MERGED_COV) \
+		> $(SUMMARY_FILE)
+
+	@echo ""
+	@echo "============================================================"
+	@echo " Coverage Report Generated"
+	@echo "============================================================"
+	@echo ""
+	@echo "Summary:"
+	@cat $(SUMMARY_FILE)
+	@echo ""
+	@echo "Summary file:"
+	@echo "  $(SUMMARY_FILE)"
+	@echo ""
+	@echo "Annotated source:"
+	@echo "  $(ANNOTATED_DIR)"
+	@echo ""
+	@echo "Merged coverage:"
+	@echo "  $(MERGED_COV)"
+	@echo ""
+	@echo "============================================================"
+	@echo ""
+
+
+# ============================================================
+# Complete coverage flow
+# ============================================================
+
+coverage: build coverage_corner coverage_sweep coverage_random merge_coverage coverage_report
+
+
+# ============================================================
+# Clean
+# ============================================================
+
+clean:
+	rm -rf obj_dir
+	rm -rf $(COVERAGE_DIR)
